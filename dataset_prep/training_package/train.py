@@ -87,6 +87,8 @@ def parse_args():
     parser.add_argument('--fine-tune-gamma', type=float, default=0.1)
     parser.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--resume')
+    parser.add_argument('--start-epoch', type=int, default=0,
+                        help='Override starting epoch (use when transitioning from old checkpoints)')
     return parser.parse_args()
 
 
@@ -135,14 +137,31 @@ def main():
 
     device = torch.device(args.device)
     model = InpaintNet(bn=True).to(device)
+    start_epoch = 1
+
     if args.resume:
-        state = torch.load(args.resume, map_location=device, weights_only=False)
+        raw = torch.load(args.resume, map_location=device, weights_only=False)
+
+        # New format: dict with 'model' key (saved by this script)
+        if isinstance(raw, dict) and 'model' in raw:
+            model_state = raw['model']
+            start_epoch = raw.get('epoch', 0) + 1
+            print(f"Resumed from {args.resume} → continuing at epoch {start_epoch}")
+        else:
+         # Old format: plain state_dict (original model.state_dict)
+            model_state = raw
+            print(f"Resumed from {args.resume} (legacy weights)")
+
+        # --start-epoch overrides auto-detected epoch (for transitioning old checkpoints)
+        if args.start_epoch > 0:
+            start_epoch = args.start_epoch
+            print(f"Manual override: starting at epoch {start_epoch}")
+
         # Handle multi-GPU saved models
-        for key in list(state.keys()):
+        for key in list(model_state.keys()):
             new_key = key.replace('module.', '')
-            state[new_key] = state.pop(key)
-        model.load_state_dict(state, strict=False)
-        print(f"Resumed from {args.resume}")
+            model_state[new_key] = model_state.pop(key)
+        model.load_state_dict(model_state, strict=False)
 
     criterion = InpaintLoss().to(device)
     optimizer = torch.optim.Adam(
@@ -155,8 +174,16 @@ def main():
         gamma=args.fine_tune_gamma
     )
 
+    # Restore optimizer/scheduler if resuming from new-format checkpoint
+    if args.resume and isinstance(raw, dict) and 'optimizer' in raw:
+        optimizer.load_state_dict(raw['optimizer'])
+        if 'scheduler' in raw:
+            scheduler.load_state_dict(raw['scheduler'])
+        print("Restored optimizer & scheduler state")
+
     best_val = None
-    for epoch in range(1, args.epochs + 1):
+    end_epoch = start_epoch + args.epochs
+    for epoch in range(start_epoch, end_epoch):
         train_loss = run_epoch(model, criterion, train_loader, device, optimizer, epoch_num=epoch)
         val_loss = None
         if val_loader is not None:
@@ -165,14 +192,20 @@ def main():
 
         scheduler.step()
 
+        # Save epoch checkpoint (numbered correctly across sessions)
         checkpoint = output_dir / 'epoch_{:03d}.pth'.format(epoch)
         torch.save(model.state_dict(), checkpoint)
         if val_loss is not None and (best_val is None or val_loss < best_val):
             best_val = val_loss
             torch.save(model.state_dict(), output_dir / 'best.pth')
 
-        # Always save latest as "last.pth" for easy resume
-        torch.save(model.state_dict(), output_dir / 'last.pth')
+        # Save last.pth with full state (so next session knows what epoch to continue from)
+        torch.save({
+            'model': model.state_dict(),
+            'epoch': epoch,
+            'optimizer': optimizer.state_dict(),
+            'scheduler': scheduler.state_dict(),
+        }, output_dir / 'last.pth')
 
         current_lr = optimizer.param_groups[0]['lr']
         message = 'epoch={} train_loss={:.6f} lr={:.6g}'.format(epoch, train_loss, current_lr)
