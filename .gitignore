@@ -12,8 +12,8 @@ build/
 # ========================================
 # Large binary files (models, datasets)
 # ========================================
-*.state_dict
-*.pth
+# *.state_dict
+# *.pth
 *.pt
 *.h5
 *.onnx
