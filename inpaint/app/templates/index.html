@@ -8,18 +8,17 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="/static/style.css?v=5">
 </head>
 <body>
     <nav class="topbar">
         <a class="brand" href="/" aria-label="FaceRestore Studio">
-            <span class="brand-mark">FR</span>
-            <span>FaceRestore Studio</span>
+            <span class="brand-name">FaceRestore</span>
         </a>
         <div class="topbar-actions">
+            <button class="btn btn-pick-random" type="button">Sample</button>
             <button class="btn btn-load" type="button">Upload</button>
-            <button class="btn btn-pick-random" type="button">Random</button>
-            <button class="btn btn-save" type="button">Save</button>
+            <button class="btn btn-save" type="button">Export</button>
         </div>
     </nav>
 
@@ -27,28 +26,41 @@
         <section class="stage">
             <div class="canvas-panel">
                 <div class="panel-head">
-                    <span class="panel-title">Source Mask</span>
+                    <span class="panel-title">Source</span>
                     <span class="panel-meta" id="mask-coverage">Mask 0%</span>
                 </div>
                 <div class="canvas-shell" id="source-shell">
                     <canvas id="canvas-in" width="256" height="256"></canvas>
                     <canvas id="canvas-mask" width="256" height="256"></canvas>
-                    <div class="empty-state" id="empty-state">Drop an image or choose Random</div>
+                    <div class="empty-state" id="empty-state">Drop an image or choose Sample</div>
                 </div>
             </div>
 
             <div class="canvas-panel" id="result-panel">
                 <div class="panel-head">
-                    <span class="panel-title">Reconstruction</span>
+                    <span class="panel-title">Restored</span>
                     <span class="panel-meta" id="model-status">Idle</span>
                 </div>
-                <div class="canvas-shell result-shell">
+                <div class="canvas-shell result-shell" id="result-shell">
                     <canvas id="canvas-out" width="256" height="256"></canvas>
                     <canvas id="canvas-compare-source" width="256" height="256"></canvas>
+                    <div class="compare-labels" aria-hidden="true">
+                        <span>Before</span>
+                        <span>After</span>
+                    </div>
+                    <input
+                        class="compare-range"
+                        type="range"
+                        id="compare-slider"
+                        min="0"
+                        max="100"
+                        value="50"
+                        aria-label="Before and after comparison"
+                    >
                     <span class="compare-handle" id="compare-handle"></span>
                     <div class="loading-overlay" id="loading-overlay">
                         <div class="loader"></div>
-                        <span>Reconstructing</span>
+                        <span>Restoring</span>
                     </div>
                 </div>
             </div>
@@ -76,16 +88,11 @@
                 <button class="btn ghost" id="btn-undo" type="button" title="Undo">Undo</button>
                 <button class="btn ghost" id="btn-redo" type="button" title="Redo">Redo</button>
                 <button class="btn ghost" id="btn-clear" type="button" title="Clear mask">Clear</button>
-                <button class="btn ghost" id="btn-fill" type="button" title="Mask the whole image">Mask all</button>
+                <button class="btn ghost" id="btn-fill" type="button" title="Mask the whole image">Fill</button>
             </div>
         </section>
 
         <section class="control-strip lower-strip" aria-label="Review controls">
-            <label class="slider-control compare-control">
-                <span>Before</span>
-                <input type="range" id="compare-slider" min="0" max="100" value="50">
-                <span>After</span>
-            </label>
             <div class="status-line" id="status-line">Loading sample image</div>
         </section>
 
@@ -117,6 +124,6 @@
     <div id="toast-container" class="toast-container" aria-live="polite"></div>
     <input type="file" id="file-upload" accept="image/*" hidden>
 
-    <script src="/static/main.js?v=3"></script>
+    <script src="/static/main.js?v=6"></script>
 </body>
 </html>

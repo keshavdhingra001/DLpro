@@ -9,7 +9,9 @@ const AppState = {
     mousePressed: false,
     lastX: 0,
     lastY: 0,
-    isDrawingAllowed: false
+    isDrawingAllowed: false,
+    compareValue: 50,
+    isComparing: false
 };
 
 const History = {
@@ -175,17 +177,78 @@ function updateMaskCoverage(coverage = computeMaskCoverage()) {
 }
 
 function updateCompare(value) {
+    const nextValue = Math.max(0, Math.min(100, Number(value)));
     const compare = byId('canvas-compare-source');
     const handle = byId('compare-handle');
-    compare.style.clipPath = `inset(0 ${100 - value}% 0 0)`;
-    handle.style.left = `${value}%`;
+    const slider = byId('compare-slider');
+    AppState.compareValue = nextValue;
+    compare.style.clipPath = `inset(0 ${100 - nextValue}% 0 0)`;
+    handle.style.left = `${nextValue}%`;
+    if (slider && Number(slider.value) !== nextValue) {
+        slider.value = String(nextValue);
+    }
+}
+
+function setCompareFromPointer(event) {
+    const shell = byId('result-shell');
+    const rect = shell.getBoundingClientRect();
+    const point = event.touches && event.touches.length ? event.touches[0] : event;
+    const x = Math.max(0, Math.min(rect.width, point.clientX - rect.left));
+    updateCompare(Math.round((x / rect.width) * 100));
+}
+
+function bindCompareDrag() {
+    const shell = byId('result-shell');
+    const slider = byId('compare-slider');
+
+    slider.addEventListener('input', event => updateCompare(Number(event.target.value)));
+
+    const beginCompare = (event) => {
+        if (event.target.closest('.loading-overlay')) {
+            return;
+        }
+        AppState.isComparing = true;
+        if (event.pointerId !== undefined && shell.setPointerCapture) {
+            shell.setPointerCapture(event.pointerId);
+        }
+        setCompareFromPointer(event);
+    };
+
+    const moveCompare = (event) => {
+        if (!AppState.isComparing) {
+            return;
+        }
+        event.preventDefault();
+        setCompareFromPointer(event);
+    };
+
+    const endCompare = (event) => {
+        AppState.isComparing = false;
+        if (event.pointerId !== undefined && shell.hasPointerCapture && shell.hasPointerCapture(event.pointerId)) {
+            shell.releasePointerCapture(event.pointerId);
+        }
+    };
+
+    if (window.PointerEvent) {
+        shell.addEventListener('pointerdown', beginCompare);
+        shell.addEventListener('pointermove', moveCompare);
+        shell.addEventListener('pointerup', endCompare);
+        shell.addEventListener('pointercancel', endCompare);
+    } else {
+        shell.addEventListener('mousedown', beginCompare);
+        document.addEventListener('mousemove', moveCompare);
+        document.addEventListener('mouseup', endCompare);
+        shell.addEventListener('touchstart', beginCompare, { passive: true });
+        shell.addEventListener('touchmove', moveCompare, { passive: false });
+        shell.addEventListener('touchend', endCompare);
+    }
 }
 
 function setProcessing(active) {
     AppState.isProcessing = active;
     byId('loading-overlay').classList.toggle('active', active);
     byId('result-panel').classList.toggle('processing', active);
-    setModelStatus(active ? 'Running' : 'Idle');
+    setModelStatus(active ? 'Working' : 'Idle');
 }
 
 function setBrushMode(mode) {
@@ -310,7 +373,7 @@ const DrawEngine = {
         const stepId = History.push({ mask: this.maskCanvas.toDataURL('image/png') });
         updateMaskCoverage(coverage);
         setProcessing(true);
-        setStatus(coverage >= 0.995 ? 'Reconstructing from learned face prior' : 'Reconstructing masked region');
+        setStatus(coverage >= 0.995 ? 'Restoring from face prior' : 'Restoring selected area');
 
         try {
             const data = await Api.sendMask(AppState.imageId, stepId, this.maskCanvas);
@@ -325,10 +388,10 @@ const DrawEngine = {
                 setModelStatus('Ready');
             }
             updateMaskCoverage(data.mask_coverage);
-            setStatus('Reconstruction ready');
+            setStatus('Result ready');
         } catch (error) {
-            showToast(`Reconstruction failed: ${error.message}`, 'error');
-            setStatus('Reconstruction failed');
+            showToast(`Restore failed: ${error.message}`, 'error');
+            setStatus('Restore failed');
         } finally {
             setProcessing(false);
         }
@@ -473,7 +536,7 @@ function doFillMask() {
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, canvasMask.width, canvasMask.height);
     updateMaskCoverage(1);
-    showToast('Full mask uses learned prior only', 'warning');
+    showToast('Full fill uses the face prior only', 'warning');
     DrawEngine.applyMask();
 }
 
@@ -550,7 +613,7 @@ document.addEventListener('DOMContentLoaded', () => {
         byId('opacity-value').textContent = event.target.value;
     });
 
-    byId('compare-slider').addEventListener('input', event => updateCompare(Number(event.target.value)));
+    bindCompareDrag();
     updateCompare(Number(byId('compare-slider').value));
 
     byId('btn-undo').addEventListener('click', doUndo);
